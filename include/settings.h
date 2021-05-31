@@ -11,13 +11,12 @@ const int mqtt_port = 8883;
 
 //=============================================================================================================================Definicion de Topicos segun canal del mensaje
 
-const char operationTopic[]   = "iot/edin/evnt/reponse/json";                                     //Topico al cual se publican las respuestas 
-const char responseTopic[]    = "iot/edin/evnt/testing_tinyPico";                                 //Topico al cual se publica la identidad
-const char configTopic[]      = "iot/edin/mgmt/manage";                                           //Topico al cual se publican los mensajes de estado
-const char stillaliveTopic[]  = "iot/edin/device/update";                                         //Topico del cual se reciben las directrices de configuracion
-const char rebootTopic[]      = "iot/edin/mgmt/initiate/device/reboot";                           //Topico del cual se reciben los mensajes de re-inicio
-const char cambioTopic[]      = "iot/edin/evnt/initiate/device/cambio";                           //cambia de estado pregunta a estado respuesta
-const char pongTopic[]        = "pong";
+const char responseTopic[]    = "iot/evnt/reponse/json";                                     //Topico al cual se publican las respuestas 
+const char eventTopic[]       = "iot/evnt/data";                                 //Topico al cual se publica la identidad
+const char configTopic[]      = "iot/device/config";                                           //Topico al cual se publican los mensajes de estado
+const char updateTopic[]      = "iot/device/update";                                         //Topico del cual se reciben las directrices de configuracion
+const char rebootTopic[]      = "iot/mgmt/initiate/device/reboot";                           //Topico del cual se reciben los mensajes de re-inicio
+const char manageTopic[]      = "iot/mgmt/initiate/device/manage";                           //cambia de estado pregunta a estado respuesta
 
 //=============================================================================================================================Definicion de versionamiento
 

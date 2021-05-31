@@ -67,9 +67,9 @@ void reconnect() {
     if (client.connect(clientId.c_str())) {
       Serial.println("connected");
       // Once connected, publish an announcement...
-      client.publish("Sensor_State", "Initil live massage");
+      client.publish(manageTopic, "Initil live massage");
       // ... and resubscribe
-      client.subscribe("Sensor_Update");
+      client.subscribe(configTopic);
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
