@@ -1,8 +1,9 @@
 #include <Arduino.h>
-#include "settings.h"
+#include "settings.h" //Variables for connection such as MQTTSERVER TOPICS nad so on look in /lib dir
 
-#include "SPIFFS.h"
+#include "SPIFFS.h" // SPIFFS.h is the ESP32 native filesistem library witch manipulates files uploaded to the ESP32
 #include <WiFiClientSecure.h>
+#include "time.h" //time.h is the ESP32 native time library which does graceful NTP server synchronization
 
 #include <PubSubClient.h>
 #include <ArduinoJson.h>                      
@@ -19,6 +20,8 @@ int value = 0;
 byte mac[6];
 char mac_Id[18];
 int count = 1;
+uint32_t chipId = 0;                                                                                      //variable donde se alamacena el identificador de cliente para el servicio de MQTT (OJO Este debe ser un identificador unico para cada dispositivo fisico sino se reiniciara el servidor MQTT)
+
 //=============================================================================================================================
 
 WiFiClientSecure espClient;
@@ -49,27 +52,50 @@ void setup_wifi() {
 void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Message arrived [");
   Serial.print(topic);
-  Serial.print("] ");
+  Serial.print("] "); // imprimir el Topico de donde provino el menaje. 
+  String payload_buff;
   for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
+    payload_buff= payload_buff+ String((char)payload[i]);
   }
-  Serial.println();
+  Serial.println(payload_buff); //imprimir el mensaje recibido
+  
+  if (strcmp (rebootTopic, topic) == 0) {                                                                 //verificar si el topico conicide con el Topico rebootTopic[] definido en el archivo settings.h local
+    Serial.println(F("Rebooting in 5 seconds..."));                                                                    //imprimir mensaje de Aviso sobre reinicio remoto de unidad.
+    delay(5000);
+    ESP.restart();                                                                                          //Emitir comando de reinicio para ESP32
+  }
+
 }
+//=============================================================================================================================>Get Chip ID
+void ESP32ID(){
+  for(int i=0; i<17; i=i+8) {
+    chipId |= ((ESP.getEfuseMac() >> (40 - i)) & 0xff) << i;
+  }
+  
+  Serial.printf("ESP32 Chip model = %s Rev %d\n", ESP.getSdkVersion(), ESP.getChipRevision());
+  Serial.printf("This chip has %d cores\n", ESP.getFlashChipSpeed());
+  Serial.print("Chip ID: "); Serial.println(chipId);
+  
+  delay(3000);
+}
+
 //=============================================================================================================================> Reconnect
 void reconnect() {
   // Loop until we're reconnected
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Create a random client ID
-    String clientId = "ESP32-";
-    clientId += String(random(0xffff), HEX); //Random number for client so to not collide wihth another node. 
+    String cId = clientId;
+    cId += String(random(0xffff), HEX); //Random number for client so to not collide wihth another node. 
     // Attempt to connect
-    if (client.connect(clientId.c_str())) {
+    if (client.connect(cId.c_str())) {
       Serial.println("connected");
       // Once connected, publish an announcement...
       client.publish(manageTopic, "Initil live massage");
       // ... and resubscribe
       client.subscribe(configTopic);
+      client.subscribe(rebootTopic); // Subscribe to channel.
+      client.subscribe(manageTopic); // Subscribe to channel.     
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -79,10 +105,70 @@ void reconnect() {
     }
   }
 }
+//============================================================================================================================= Print Local time with offsets
+void printLocalTime()
+{
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Failed to obtain time");
+    return;
+  }
+  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+}
+//============================================================================================================================= Json de Configuracion 
+void configuration_json (){
+  const int capacity = JSON_OBJECT_SIZE(10);
+  StaticJsonDocument<capacity> edin_json_config_doc;
+  // create an object
+  JsonObject object = edin_json_config_doc.to<JsonObject>();
+
+  object["AliveUpdate:hrs"]   = isalivemsg_interval/3600000;
+  object["MqttServer"]        = mqtt_server;
+  char buf[16];
+  sprintf(buf, "IP:%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
+  Serial.println(String(buf));
+  object["MqttPort"]          = mqtt_port;
+  object["gloveCode"]         = chipId ;
+  object["IP"]                = String (buf);
+  object["ClientID"]          = String(clientId);
+    
+  String output;
+  size_t n = serializeJson(object, output);                                                                  //SAve CPU cycles by calculatinf the size.
+  Serial.println(F("publishing device manageTopic metadata:"));
+  Serial.println(output);
+  if (!client.connected()) {
+    reconnect();
+  }
+  if (client.publish(responseTopic, output.c_str(), n)) {
+    Serial.println(F("device Publish ok"));
+  }else {
+    Serial.println(F("device Publish failed:"));
+  }
+
+}
 //*************************************************************************************************************************-SETUP-**********************************************************
 void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(true);
+   //-------------------------------------------------------------------testing the setting
+  //iniciamos desplegando informacion sobre el chip y la version de firmware. 
+  Serial.println(F("")); 
+  Serial.println(F("Inicializacion de programa de ESP32;"));
+  Serial.println(F("Parametros de ambiente de funcionamiento:"));
+  Serial.print(F("            CHIPID: "));
+  ESP32ID();
+  Serial.print(F("            HARDWARE: "));
+  Serial.println(HardwareVersion);
+  Serial.print(F("            FIRMWARE: "));
+  Serial.println(FirmwareVersion);
+  Serial.print(F("            Servidor de NTP: "));
+  Serial.println(ntpServer);
+  Serial.print(F("            Servidor de MQTT: "));
+  Serial.println(mqtt_server);
+  Serial.print(F("            Client ID: "));
+  Serial.println(chipId); 
+  delay(500);
+
   // initialize digital pin LED_BUILTIN as an output.
   pinMode(2, OUTPUT);
   setup_wifi();
@@ -142,21 +228,6 @@ void setup() {
   pRead_privatekey = (char *)malloc(sizeof(char) * (Read_privatekey.length() + 1));
   strcpy(pRead_privatekey, Read_privatekey.c_str());
 
-  Serial.println("================================================================================================");
-  Serial.println("Certificates that passing to espClient Method");
-  Serial.println();
-  Serial.println("Root CA:");
-  Serial.write(pRead_rootca);
-  Serial.println("================================================================================================");
-  Serial.println();
-  Serial.println("Cert:");
-  Serial.write(pRead_cert);
-  Serial.println("================================================================================================");
-  Serial.println();
-  Serial.println("privateKey:");
-  Serial.write(pRead_privatekey);
-  Serial.println("================================================================================================");
-
   espClient.setCACert(pRead_rootca);
   espClient.setCertificate(pRead_cert);
   espClient.setPrivateKey(pRead_privatekey);
@@ -169,14 +240,18 @@ void setup() {
   snprintf(mac_Id, sizeof(mac_Id), "%02x:%02x:%02x:%02x:%02x:%02x",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   Serial.print(mac_Id);
-  //=====================================================================================================================
+  //===================================================================================================================== init and get the time
+
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  printLocalTime();
+  configuration_json(); 
 }
 
 //*************************************************************************************************************************-LOOP-**********************************************************
 void loop() {
-  float h = 96.02;   // Reading Temperature form DHT sensor
+  float h = 96.02;      // Reading Temperature form DHT sensor
   float t = 26.05;      // Reading Humidity form DHT sensor
-  float tF = (t * 1.8) + 32;
+
   if (isnan(h) || isnan(t))
   {
     Serial.println("Failed to read from DHT sensor!");
@@ -214,10 +289,11 @@ void loop() {
     Serial.print("Publish message: ");
     Serial.print(count);
     Serial.println(msg);
-    client.publish("pulse_out", msg);
+    client.publish(eventTopic, msg);
     count = count + 1;
     //================================================================================================
   }
+
   digitalWrite(2, HIGH);   // turn the LED on (HIGH is the voltage level)
   delay(1000);                       // wait for a second
   digitalWrite(2, LOW);    // turn the LED off by making the voltage LOW
