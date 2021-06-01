@@ -60,8 +60,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.println(payload_buff); //imprimir el mensaje recibido
   
   if (strcmp (rebootTopic, topic) == 0) {                                                                 //verificar si el topico conicide con el Topico rebootTopic[] definido en el archivo settings.h local
-    Serial.println(F("Rebooting in 5 seconds..."));                                                                    //imprimir mensaje de Aviso sobre reinicio remoto de unidad.
-    delay(5000);
+    Serial.println(F("Rebooting in 1 seconds..."));                                                                    //imprimir mensaje de Aviso sobre reinicio remoto de unidad.
+    delay(1000);
     ESP.restart();                                                                                          //Emitir comando de reinicio para ESP32
   }
 
@@ -90,9 +90,11 @@ void reconnect() {
     // Attempt to connect
     if (client.connect(cId.c_str())) {
       Serial.println("connected");
+      Serial.println("sending reconnection status");
       // Once connected, publish an announcement...
-      client.publish(manageTopic, "Initil live massage");
+      client.publish(manageTopic, "{\"satatus\":\"reconnect\"}");
       // ... and resubscribe
+      Serial.println("subscribing to topics");
       client.subscribe(configTopic);
       client.subscribe(rebootTopic); // Subscribe to channel.
       client.subscribe(manageTopic); // Subscribe to channel.     
@@ -117,16 +119,18 @@ void printLocalTime()
 }
 //============================================================================================================================= Json de Configuracion 
 void configuration_json (){
-  const int capacity = JSON_OBJECT_SIZE(10);
+  Serial.println("Sending Configuration Json to responseTopic");
+  char buf[16];
+  sprintf(buf, "IP:%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
+  Serial.println(String(buf));
+
+  const int capacity = JSON_OBJECT_SIZE(40);
   StaticJsonDocument<capacity> edin_json_config_doc;
   // create an object
   JsonObject object = edin_json_config_doc.to<JsonObject>();
 
   object["AliveUpdate:hrs"]   = isalivemsg_interval/3600000;
   object["MqttServer"]        = mqtt_server;
-  char buf[16];
-  sprintf(buf, "IP:%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3] );
-  Serial.println(String(buf));
   object["MqttPort"]          = mqtt_port;
   object["gloveCode"]         = chipId ;
   object["IP"]                = String (buf);
@@ -134,17 +138,18 @@ void configuration_json (){
     
   String output;
   size_t n = serializeJson(object, output);                                                                  //SAve CPU cycles by calculatinf the size.
-  Serial.println(F("publishing device manageTopic metadata:"));
-  Serial.println(output);
+  Serial.println(F("publishing device responseTopic:"));
+  //Serial.println(output);
+  
   if (!client.connected()) {
+    Serial.println("Configjson: Client not connected reconnecting");
     reconnect();
   }
-  if (client.publish(responseTopic, output.c_str(), n)) {
+  if (client.connected()) {
+    client.publish(responseTopic, (char*) output.c_str(), n);
+    client.print(output);
     Serial.println(F("device Publish ok"));
-  }else {
-    Serial.println(F("device Publish failed:"));
   }
-
 }
 //*************************************************************************************************************************-SETUP-**********************************************************
 void setup() {
