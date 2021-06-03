@@ -26,7 +26,10 @@ int count = 1;
 uint32_t chipId = 0;                                                                                      //variable donde se alamacena el identificador de cliente para el servicio de MQTT (OJO Este debe ser un identificador unico para cada dispositivo fisico sino se reiniciara el servidor MQTT)
 String cId;
 //=============================================================================================================================Datetime variables.
-
+time_t now;
+//=============================================================================================================================Sensor variables
+float h ;      // Reading Temperature form DHT sensor
+float t ;      // Reading Humidity form DHT sensor
 
 //=============================================================================================================================
 
@@ -37,7 +40,7 @@ PubSubClient client(espClient);
 void setup_wifi() {
   delay(10);
   Serial.println();
-  Serial.print("Connecting to ");
+  Serial.print(F("Connecting to "));
   Serial.println(ssid);
 
   WiFi.begin(ssid, password);
@@ -47,9 +50,9 @@ void setup_wifi() {
     Serial.print(".");
   }
 
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
+  Serial.println(F(""));
+  Serial.println(F("WiFi connected"));
+  Serial.println(F("IP address: "));
   Serial.println(WiFi.localIP());
 }
 //=============================================================================================================================> callback
@@ -84,13 +87,18 @@ void ESP32ID(){
 }
 //============================================================================================================================= Json de Configuracion 
 void configuration_json (){
+  // Create a random client ID
+  char UniqueCID [60];
+  String CID (clientId + String(chipId)); //Random number for client so to not collide wihth another node.
+  Serial.println(CID); 
+  CID.toCharArray(UniqueCID, 60);
+  //Stablish Json Configutation file variables.
   #define JSON_MSG_BUFFER_LEN  256
   char json_msg_buffer [JSON_MSG_BUFFER_LEN];
-  Serial.println("Sending Configuration Json to responseTopic");
+  Serial.println(F("Sending Configuration Json to responseTopic"));
   char buf[16];
   sprintf(buf, "%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
   Serial.println(String(buf));
-
   StaticJsonDocument<256> json_config_doc;
   // create an object
  
@@ -99,7 +107,7 @@ void configuration_json (){
   json_config_doc["MqttPort"]          = mqtt_port;
   json_config_doc["gloveCode"]         = chipId ;
   json_config_doc["IP"]                = String (buf);
-  json_config_doc["ClientID"]          = String(clientId);
+  json_config_doc["ClientID"]          = String(UniqueCID);
 
   String JSONBuffer;
   serializeJson(json_config_doc, JSONBuffer);
@@ -108,11 +116,8 @@ void configuration_json (){
   Serial.println(json_msg_buffer);
   while (!client.connected()) {
     Serial.print(F("Attempting MQTT connection..."));
-    // Create a random client ID
-    cId = clientId;
-    cId += String(chipId); //Random number for client so to not collide wihth another node. 
     // Attempt to connect
-    if (client.connect(cId.c_str())) {
+    if (client.connect(UniqueCID)) {
 
       Serial.println(F("connected"));
       Serial.println(F("sending Configuration JSON"));
@@ -134,23 +139,24 @@ void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Create a random client ID
-    cId = clientId;
-    cId += String(random(0xffff), HEX); //Random number for client so to not collide wihth another node. 
+    char UniqueCID [30];
+    String CID (clientId + String(chipId)); //Random number for client so to not collide wihth another node. 
+    CID.toCharArray(UniqueCID, 30);
     // Attempt to connect
-    if (client.connect(cId.c_str())) {
-      Serial.println("connected");
-      Serial.println("sending reconnection status");
+    if (client.connect(UniqueCID)){
+      Serial.println(F("connected"));
+      Serial.println(F("sending reconnection status"));
       // Once connected, publish an announcement...
       client.publish(manageTopic, "{\"satatus\":\"reconnect\"}");
       // ... and resubscribe
-      Serial.println("subscribing to topics");
+      Serial.println(F("subscribing to topics"));
       client.subscribe(configTopic);
       client.subscribe(rebootTopic); // Subscribe to channel.
       client.subscribe(manageTopic); // Subscribe to channel.
       } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
+      Serial.println(F(" try again in 5 seconds"));
       // Wait 5 seconds before retrying
       delay(5000);
     }
@@ -165,7 +171,7 @@ void printLocalTime()
   timeinfo = localtime(&now);
   printf ("Current local time and date: %s\n", asctime(timeinfo));
   if(timeinfo->tm_year == 70){     // == number of years since 1900, 70 means no time obtained from NTP server
-    Serial.println("Restart..");
+    Serial.println(F("Restart.."));
     delay(6000);
     ESP.restart();
   }      
@@ -199,44 +205,44 @@ void setup() {
   delay(1000);
   //=============================================================
   if (!SPIFFS.begin(true)) {
-    Serial.println("An Error has occurred while mounting SPIFFS");
+    Serial.println(F("An Error has occurred while mounting SPIFFS"));
     return;
   }
   //=======================================
   //Root CA File Reading.
   File file2 = SPIFFS.open("/AmazonRootCA1.pem", "r");
   if (!file2) {
-    Serial.println("Failed to open file for reading");
+    Serial.println(F("Failed to open file for reading"));
     return;
   }
-  Serial.println("Root CA File Content:");
+  Serial.println(F("Root CA File Content:"));
   while (file2.available()) {
     Read_rootca = file2.readString();
-    Serial.println(Read_rootca);
+    //Serial.println(Read_rootca);
   }
   //=============================================
   // Cert file reading
   File file4 = SPIFFS.open("/cda94561be-certificate.pem.crt", "r");
   if (!file4) {
-    Serial.println("Failed to open file for reading");
+    Serial.println(F("Failed to open file for reading"));
     return;
   }
-  Serial.println("Cert File Content:");
+  Serial.println(F("Cert File Content:"));
   while (file4.available()) {
     Read_cert = file4.readString();
-    Serial.println(Read_cert);
+    //Serial.println(Read_cert);
   }
   //=================================================
   //Privatekey file reading
   File file6 = SPIFFS.open("/cda94561be-private.pem.key", "r");
   if (!file6) {
-    Serial.println("Failed to open file for reading");
+    Serial.println(F("Failed to open file for reading"));
     return;
   }
-  Serial.println("privateKey File Content:");
+  Serial.println(F("privateKey File Content:"));
   while (file6.available()) {
     Read_privatekey = file6.readString();
-    Serial.println(Read_privatekey);
+    //Serial.println(Read_privatekey);
   }
   //=====================================================
 
@@ -261,68 +267,59 @@ void setup() {
 
   //====================================================================================================================
   WiFi.macAddress(mac);
+  Serial.println(F("Read MAC address"));
   snprintf(mac_Id, sizeof(mac_Id), "%02x:%02x:%02x:%02x:%02x:%02x",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   Serial.print(mac_Id);
   //===================================================================================================================== init and get the time
-
+  Serial.println(F("Read MAC address"));
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   setenv("TZ", "CST+6",1); // You must include '0' after first designator e.g. GMT0GMT-1, ',1' is true or ON
   printLocalTime();
+  Serial.println(F("Terminando el Setup Enviando el Json de configuracion"));
   configuration_json();
 }
-
-//*************************************************************************************************************************-LOOP-**********************************************************
-void loop() {
-  float h = 96.02;      // Reading Temperature form DHT sensor
-  float t = 26.05;      // Reading Humidity form DHT sensor
-
-  if (isnan(h) || isnan(t))
-  {
-    Serial.println("Failed to read from DHT sensor!");
-    return;
-  }
+//============================================================================================================================= Check The current time is SYNC
+void CheckNTPTime (){
   //===============================================
-  time_t now = time(nullptr);
+  now = time(nullptr);
   struct tm * timeinfo;
   // time (&now); // not necessary
   timeinfo = localtime(&now);
-
   // below several approaches to time are displayed to help you get insight
   // spaces in this code are for ease of maintaining alignment in the monitor output
   printf(                 "1 - Current local time : %s\n", asctime(timeinfo));
   Serial.println((String) "6 - time(&now)         : "+time(&now)); //The Unix epoch (or Unix time or POSIX time or Unix timestamp) 
-  Serial.println("*************************************************");
-
+  Serial.println(F("*************************************************"));
   //===============================================
-
+}
+//============================================================================================================================= Check Sensor
+void CheckSensor(){
+  h = 96.02;      // Reading Temperature form DHT sensor
+  t = 26.05;      // Reading Humidity form DHT sensor
+  if (isnan(h) || isnan(t))
+  {
+    Serial.println(F("Failed to read from DHT sensor!"));
+    return;
+  }  
   // display TEMP
   Serial.print(h);
-  Serial.print("Temperature: ");
-  Serial.println("C");
-
+  Serial.print(F("Temperature: "));
+  Serial.println(F("C"));
   // display humidity
   Serial.print(h);
-  Serial.print("%");
-  Serial.print(" ");
-  Serial.println("Rel H");
-
-
+  Serial.print(F("%"));
+  Serial.print(F(" "));
+  Serial.println(F("Rel H"));
   //===============================================
-
-  if (!client.connected()) {
-    reconnect();
-  }
-  client.loop();
-
+}
+//============================================================================================================================= Send Datato AWS
+void SendDatatoAWS(String macIdStr, String Temprature, String Humidity){
   long sendnow = millis();
   if (sendnow - lastMsg > 5000) {
+    CheckNTPTime();
     lastMsg = sendnow;
     //=============================================================================================
-    String macIdStr = mac_Id;
-    String Temprature = String(t);
-    String Humidity = String(h);
-
     StaticJsonDocument<256> sensor_data;
     sensor_data["mac_Id"]     =   macIdStr.c_str();
     sensor_data["temprature"] =   Temprature.c_str();
@@ -339,9 +336,22 @@ void loop() {
     count = count + 1;
     //================================================================================================
   }
+}
+//============================================================================================================================= Flash Onboard LED of ESP32
+void flashLEDS(){
+  digitalWrite(2, HIGH);             // turn the LED on (HIGH is the voltage level)
+  delay(1000);                       // wait for a second
+  digitalWrite(2, LOW);              // turn the LED off by making the voltage LOW
+  delay(1000);                       // wait for a second
+}
 
-  digitalWrite(2, HIGH);   // turn the LED on (HIGH is the voltage level)
-  delay(1000);                       // wait for a second
-  digitalWrite(2, LOW);    // turn the LED off by making the voltage LOW
-  delay(1000);                       // wait for a second
+//*************************************************************************************************************************-LOOP-**********************************************************
+void loop() {
+  CheckSensor();
+  SendDatatoAWS(mac_Id,String(t),String(h));
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+  flashLEDS();
 }
