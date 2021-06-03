@@ -6,6 +6,8 @@
 #include "time.h" //time.h is the ESP32 native time library which does graceful NTP server synchronization
 
 #include <PubSubClient.h>
+#define MQTT_MAX_PACKET_SIZE 512
+
 #include <ArduinoJson.h>                      
 
 String Read_rootca;
@@ -20,7 +22,11 @@ int value = 0;
 byte mac[6];
 char mac_Id[18];
 int count = 1;
+
 uint32_t chipId = 0;                                                                                      //variable donde se alamacena el identificador de cliente para el servicio de MQTT (OJO Este debe ser un identificador unico para cada dispositivo fisico sino se reiniciara el servidor MQTT)
+String cId;
+//=============================================================================================================================Datetime variables.
+
 
 //=============================================================================================================================
 
@@ -40,8 +46,6 @@ void setup_wifi() {
     delay(500);
     Serial.print(".");
   }
-
-  randomSeed(micros()); //initializes the pseudo-random number generator, causing it to start at an arbitrary point in its random sequence.
 
   Serial.println("");
   Serial.println("WiFi connected");
@@ -78,14 +82,59 @@ void ESP32ID(){
   
   delay(3000);
 }
+//============================================================================================================================= Json de Configuracion 
+void configuration_json (){
+  #define JSON_MSG_BUFFER_LEN  256
+  char json_msg_buffer [JSON_MSG_BUFFER_LEN];
+  Serial.println("Sending Configuration Json to responseTopic");
+  char buf[16];
+  sprintf(buf, "%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
+  Serial.println(String(buf));
 
+  StaticJsonDocument<256> json_config_doc;
+  // create an object
+ 
+  json_config_doc["AliveUpdate:hrs"]   = isalivemsg_interval/3600000;
+  json_config_doc["MqttServer"]        = mqtt_server;
+  json_config_doc["MqttPort"]          = mqtt_port;
+  json_config_doc["gloveCode"]         = chipId ;
+  json_config_doc["IP"]                = String (buf);
+  json_config_doc["ClientID"]          = String(clientId);
+
+  String JSONBuffer;
+  serializeJson(json_config_doc, JSONBuffer);
+  snprintf(json_msg_buffer, JSON_MSG_BUFFER_LEN,"%s", JSONBuffer.c_str());
+  Serial.println(F("publishing device responseTopic:"));
+  Serial.println(json_msg_buffer);
+  while (!client.connected()) {
+    Serial.print(F("Attempting MQTT connection..."));
+    // Create a random client ID
+    cId = clientId;
+    cId += String(chipId); //Random number for client so to not collide wihth another node. 
+    // Attempt to connect
+    if (client.connect(cId.c_str())) {
+
+      Serial.println(F("connected"));
+      Serial.println(F("sending Configuration JSON"));
+      client.publish(updateTopic, json_msg_buffer);
+      Serial.println(F("Configuration JSON Publish ok"));
+
+      } else {
+      Serial.print(F("failed, rc="));
+      Serial.print(client.state());
+      Serial.println(F(" try again in 5 seconds"));
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+}
 //=============================================================================================================================> Reconnect
 void reconnect() {
   // Loop until we're reconnected
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Create a random client ID
-    String cId = clientId;
+    cId = clientId;
     cId += String(random(0xffff), HEX); //Random number for client so to not collide wihth another node. 
     // Attempt to connect
     if (client.connect(cId.c_str())) {
@@ -97,8 +146,8 @@ void reconnect() {
       Serial.println("subscribing to topics");
       client.subscribe(configTopic);
       client.subscribe(rebootTopic); // Subscribe to channel.
-      client.subscribe(manageTopic); // Subscribe to channel.     
-    } else {
+      client.subscribe(manageTopic); // Subscribe to channel.
+      } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
       Serial.println(" try again in 5 seconds");
@@ -110,46 +159,16 @@ void reconnect() {
 //============================================================================================================================= Print Local time with offsets
 void printLocalTime()
 {
-  struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)){
-    Serial.println("Failed to obtain time");
-    return;
-  }
-  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
-}
-//============================================================================================================================= Json de Configuracion 
-void configuration_json (){
-  Serial.println("Sending Configuration Json to responseTopic");
-  char buf[16];
-  sprintf(buf, "IP:%d.%d.%d.%d", WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
-  Serial.println(String(buf));
-
-  const int capacity = JSON_OBJECT_SIZE(40);
-  StaticJsonDocument<capacity> edin_json_config_doc;
-  // create an object
-  JsonObject object = edin_json_config_doc.to<JsonObject>();
-
-  object["AliveUpdate:hrs"]   = isalivemsg_interval/3600000;
-  object["MqttServer"]        = mqtt_server;
-  object["MqttPort"]          = mqtt_port;
-  object["gloveCode"]         = chipId ;
-  object["IP"]                = String (buf);
-  object["ClientID"]          = String(clientId);
-    
-  String output;
-  size_t n = serializeJson(object, output);                                                                  //SAve CPU cycles by calculatinf the size.
-  Serial.println(F("publishing device responseTopic:"));
-  //Serial.println(output);
-  
-  if (!client.connected()) {
-    Serial.println("Configjson: Client not connected reconnecting");
-    reconnect();
-  }
-  if (client.connected()) {
-    client.publish(responseTopic, (char*) output.c_str(), n);
-    client.print(output);
-    Serial.println(F("device Publish ok"));
-  }
+  time_t now = time(nullptr);
+  struct tm * timeinfo;
+  //time (&now);
+  timeinfo = localtime(&now);
+  printf ("Current local time and date: %s\n", asctime(timeinfo));
+  if(timeinfo->tm_year == 70){     // == number of years since 1900, 70 means no time obtained from NTP server
+    Serial.println("Restart..");
+    delay(6000);
+    ESP.restart();
+  }      
 }
 //*************************************************************************************************************************-SETUP-**********************************************************
 void setup() {
@@ -248,8 +267,9 @@ void setup() {
   //===================================================================================================================== init and get the time
 
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  setenv("TZ", "CST+6",1); // You must include '0' after first designator e.g. GMT0GMT-1, ',1' is true or ON
   printLocalTime();
-  configuration_json(); 
+  configuration_json();
 }
 
 //*************************************************************************************************************************-LOOP-**********************************************************
@@ -262,6 +282,18 @@ void loop() {
     Serial.println("Failed to read from DHT sensor!");
     return;
   }
+  //===============================================
+  time_t now = time(nullptr);
+  struct tm * timeinfo;
+  // time (&now); // not necessary
+  timeinfo = localtime(&now);
+
+  // below several approaches to time are displayed to help you get insight
+  // spaces in this code are for ease of maintaining alignment in the monitor output
+  printf(                 "1 - Current local time : %s\n", asctime(timeinfo));
+  Serial.println((String) "6 - time(&now)         : "+time(&now)); //The Unix epoch (or Unix time or POSIX time or Unix timestamp) 
+  Serial.println("*************************************************");
+
   //===============================================
 
   // display TEMP
@@ -283,14 +315,23 @@ void loop() {
   }
   client.loop();
 
-  long now = millis();
-  if (now - lastMsg > 5000) {
-    lastMsg = now;
+  long sendnow = millis();
+  if (sendnow - lastMsg > 5000) {
+    lastMsg = sendnow;
     //=============================================================================================
     String macIdStr = mac_Id;
     String Temprature = String(t);
     String Humidity = String(h);
-    snprintf (msg, BUFFER_LEN, "{\"mac_Id\" : \"%s\", \"Temprature\" : %s, \"Humidity\" : \"%s\"}", macIdStr.c_str(), Temprature.c_str(), Humidity.c_str());
+
+    StaticJsonDocument<256> sensor_data;
+    sensor_data["mac_Id"]     =   macIdStr.c_str();
+    sensor_data["temprature"] =   Temprature.c_str();
+    sensor_data["humidity"]   =   Humidity.c_str();
+    sensor_data["timestamp"]  =   time(&now);
+
+    String JSONmessageBuffer;
+    serializeJson(sensor_data, JSONmessageBuffer);    
+    snprintf(msg, BUFFER_LEN,"%s", JSONmessageBuffer.c_str());
     Serial.print("Publish message: ");
     Serial.print(count);
     Serial.println(msg);

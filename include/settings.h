@@ -4,7 +4,7 @@
 #define ORG "flatbox"
 #define DEVICE_TYPE "ESP32"
 #define DEVICE_ID "AWS-Serverless"
-char clientId[] = "d:" ORG ":" DEVICE_TYPE ":" DEVICE_ID;                                   //Variable de Identificacion de Cliente para servicio de MQTT
+char clientId[] = "d:" ORG "TP:" DEVICE_TYPE "ID:" DEVICE_ID "FM:";                                   //Variable de Identificacion de Cliente para servicio de MQTT
 
 //=============================================================================================================================WIFI SETTINGS
 
