@@ -36,4 +36,6 @@ const long  gmtOffset_sec = 3600;
 const int   daylightOffset_sec = 3600;
 
 //============================================================================================================================= Defeinicion de intervalos de tiempo paracontadores
-unsigned long isalivemsg_interval           = 3600000;                                      //Cada cuanto debe enviar un mensaje de que esta vivo
+unsigned long last_Case_Status_Millis;  
+unsigned long isalivemsg_interval           = 36000UL;                                      //Cada cuanto debe enviar un mensaje de que esta vivo
+unsigned long intervalo_Case_Status_Millis  = 30000UL; 

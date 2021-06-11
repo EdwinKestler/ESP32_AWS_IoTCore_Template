@@ -1,40 +1,40 @@
 #include <Arduino.h>
-#include "settings.h" //Variables for connection such as MQTTSERVER TOPICS nad so on look in /lib dir
+#include "settings.h"             //Variables for connection such as MQTTSERVER TOPICS nad so on look in /lib dir
 
-#include "SPIFFS.h" // SPIFFS.h is the ESP32 native filesistem library witch manipulates files uploaded to the ESP32
+#include "SPIFFS.h"               // SPIFFS.h is the ESP32 native filesistem library witch manipulates files uploaded to the ESP32
 #include <WiFiClientSecure.h>
-#include "time.h" //time.h is the ESP32 native time library which does graceful NTP server synchronization
+#include "time.h"                 //time.h is the ESP32 native time library which does graceful NTP server synchronization
 
-#include <PubSubClient.h>
-#define MQTT_MAX_PACKET_SIZE 512
+#include <PubSubClient.h>         //Pub/Sub library for MQTT communication
+#define MQTT_MAX_PACKET_SIZE 512  //This tells the library what the maximun lenght of th massage can be. modify if bigger massage. can mesurate it here : https://arduinojson.org/v6/assistant/#
 
-#include <ArduinoJson.h>                      
+#include <ArduinoJson.h>          //Libarry for JSON data contrcution
+//============================================================================================================================= SSL variables to store your certificates for after been read from the filesystem
 
 String Read_rootca;
 String Read_cert;
 String Read_privatekey;
 
-//=============================================================================================================================
-#define BUFFER_LEN  256
-long lastMsg = 0;
-char msg[BUFFER_LEN];
-int value = 0;
-byte mac[6];
-char mac_Id[18];
-int count = 1;
+//============================================================================================================================= Program Variables.
+#define BUFFER_LEN  256 //leght of buffer to store the msg befor data transmition in SendDatatoAWS()
+long lastMsg = 0;       //variable to store the millis() when last time was of tanstion SendDatatoAWS()
+char msg[BUFFER_LEN];   //buffer to store the data to be sent to AWS SendDatatoAWS()
+byte mac[6];            //variable to stre mac values
+char mac_Id[18];        //buffer to store mac value
+int count = 1;          //variable to store how many data massages have been sent
 
-uint32_t chipId = 0;                                                                                      //variable donde se alamacena el identificador de cliente para el servicio de MQTT (OJO Este debe ser un identificador unico para cada dispositivo fisico sino se reiniciara el servidor MQTT)
-String cId;
+uint32_t chipId = 0;    //variable donde se alamacena el identificador de cliente para el servicio de MQTT (OJO Este debe ser un identificador unico para cada dispositivo fisico sino se reiniciara el servidor MQTT)
 //=============================================================================================================================Datetime variables.
-time_t now;
+time_t now;             //variable that stores NTP time in UNIX format
 //=============================================================================================================================Sensor variables
-float h ;      // Reading Temperature form DHT sensor
-float t ;      // Reading Humidity form DHT sensor
+float h ;               // Reading Temperature form DHT sensor
+float t ;               // Reading Humidity form DHT sensor
+//============================================================================================================================= StateMachine variables
+static enum fsm_state {STATE_IDLE = 0, STATE_CHECK_SENSOR, STATE_TRANSMITIR_DATOS} fsm_state = STATE_IDLE;  
+//============================================================================================================================= Communication Clients
 
-//=============================================================================================================================
-
-WiFiClientSecure espClient;
-PubSubClient client(espClient);
+WiFiClientSecure espClient;         //Cliente de WiFi
+PubSubClient client(espClient);     //Cliente MQTT
 
 //=============================================================================================================================> Setup Wifi
 void setup_wifi() {
@@ -121,10 +121,14 @@ void configuration_json (){
 
       Serial.println(F("connected"));
       Serial.println(F("sending Configuration JSON"));
-      client.publish(updateTopic, json_msg_buffer);
-      Serial.println(F("Configuration JSON Publish ok"));
 
-      } else {
+      if(client.publish(updateTopic, json_msg_buffer)){
+        Serial.println(F("Configuration JSON Publish ok"));
+      }else{
+        Serial.println(F("device Publish failed:"));
+      }
+
+    } else {
       Serial.print(F("failed, rc="));
       Serial.print(client.state());
       Serial.println(F(" try again in 5 seconds"));
@@ -274,6 +278,7 @@ void setup() {
   //===================================================================================================================== init and get the time
   Serial.println(F("Read MAC address"));
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  //ignore the following precompiler error...for some reaseon i couldnt debug, but hey, it works as it should!. 
   setenv("TZ", "CST+6",1); // You must include '0' after first designator e.g. GMT0GMT-1, ',1' is true or ON
   printLocalTime();
   Serial.println(F("Terminando el Setup Enviando el Json de configuracion"));
@@ -295,6 +300,7 @@ void CheckNTPTime (){
 }
 //============================================================================================================================= Check Sensor
 void CheckSensor(){
+  //suppose this are readnigs from your sensor.
   h = 96.02;      // Reading Temperature form DHT sensor
   t = 26.05;      // Reading Humidity form DHT sensor
   if (isnan(h) || isnan(t))
@@ -311,7 +317,7 @@ void CheckSensor(){
   Serial.print(F("%"));
   Serial.print(F(" "));
   Serial.println(F("Rel H"));
-  //===============================================
+  
 }
 //============================================================================================================================= Send Datato AWS
 void SendDatatoAWS(String macIdStr, String Temprature, String Humidity){
@@ -327,13 +333,21 @@ void SendDatatoAWS(String macIdStr, String Temprature, String Humidity){
     sensor_data["timestamp"]  =   time(&now);
 
     String JSONmessageBuffer;
-    serializeJson(sensor_data, JSONmessageBuffer);    
+    serializeJson(sensor_data, JSONmessageBuffer);
+
     snprintf(msg, BUFFER_LEN,"%s", JSONmessageBuffer.c_str());
+
     Serial.print("Publish message: ");
-    Serial.print(count);
     Serial.println(msg);
-    client.publish(eventTopic, msg);
+
+    if(client.publish(eventTopic, msg)){
+      Serial.println(F("device Publish ok"));
+    }else {
+      Serial.println(F("device Publish failed:"));
+    }
     count = count + 1;
+    Serial.print("messages published:");
+    Serial.println(count);
     //================================================================================================
   }
 }
@@ -347,11 +361,41 @@ void flashLEDS(){
 
 //*************************************************************************************************************************-LOOP-**********************************************************
 void loop() {
-  CheckSensor();
-  SendDatatoAWS(mac_Id,String(t),String(h));
-  if (!client.connected()) {
-    reconnect();
+  
+  switch(fsm_state){
+    case STATE_IDLE:
+      if(millis() - last_Case_Status_Millis > intervalo_Case_Status_Millis){
+        last_Case_Status_Millis = millis();
+        Serial.print(F("fsm_state: "));
+        Serial.println(fsm_state);
+        Serial.println(F(""));
+        fsm_state = STATE_CHECK_SENSOR;
+      }
+      
+      if (!client.connected()){
+        reconnect();
+      }
+      
+      client.loop();
+      delay(10);
+    break;
+
+    case STATE_CHECK_SENSOR:
+      Serial.println(F("Listo para recolectar los datos del sensor"));
+      CheckSensor();
+      fsm_state = STATE_TRANSMITIR_DATOS;
+    break;
+
+    case STATE_TRANSMITIR_DATOS:
+      Serial.println(F("Listo para transmitir la data recolectada"));
+      SendDatatoAWS(mac_Id,String(t),String(h));
+      delay(10);
+      flashLEDS();
+      fsm_state = STATE_IDLE;
+    break;
+    
+    default:
+      fsm_state = STATE_IDLE;
+    break;
   }
-  client.loop();
-  flashLEDS();
 }
