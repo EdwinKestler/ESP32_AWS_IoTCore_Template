@@ -154,9 +154,26 @@ void reconnect() {
       client.publish(manageTopic, "{\"satatus\":\"reconnect\"}");
       // ... and resubscribe
       Serial.println(F("subscribing to topics"));
-      client.subscribe(configTopic);
-      client.subscribe(rebootTopic); // Subscribe to channel.
-      client.subscribe(manageTopic); // Subscribe to channel.
+      if(client.subscribe(configTopic)){ // Subscribe to config topic, returns true or false
+        Serial.print(F("Sucribed to, "));
+        Serial.println(configTopic);
+      }else{
+        Serial.print(F("couldnt subscribe to: "));
+        Serial.println(configTopic);
+      }
+      if(client.subscribe(rebootTopic)){ // Subscribe to Reboot topic, returns true or false
+        Serial.println(rebootTopic);
+      }else{
+        Serial.print(F("couldnt subscribe to: "));
+        Serial.println(rebootTopic);
+      }
+      if(client.subscribe(manageTopic)){ // Subscribe to manage topic, returns true or false
+        Serial.print(F("Sucribed to, "));
+        Serial.println(manageTopic);
+      }else{
+        Serial.print(F("couldnt subscribe to: "));
+        Serial.println(manageTopic);
+      }
       } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
