@@ -151,7 +151,7 @@ void reconnect() {
       Serial.println(F("connected"));
       Serial.println(F("sending reconnection status"));
       // Once connected, publish an announcement...
-      client.publish(manageTopic, "{\"satatus\":\"reconnect\"}");
+      client.publish(manageTopic, "{\"status\":\"reconnect\"}");
       // ... and resubscribe
       Serial.println(F("subscribing to topics"));
       if(client.subscribe(configTopic)){ // Subscribe to config topic, returns true or false
@@ -243,7 +243,7 @@ void setup() {
   }
   //=============================================
   // Cert file reading
-  File file4 = SPIFFS.open("/cda94561be-certificate.pem.crt", "r");
+  File file4 = SPIFFS.open("/prueba-certificate.pem.crt", "r");//File file4 = SPIFFS.open("/49dac2-certificate.pem.crt", "r");
   if (!file4) {
     Serial.println(F("Failed to open file for reading"));
     return;
@@ -255,7 +255,7 @@ void setup() {
   }
   //=================================================
   //Privatekey file reading
-  File file6 = SPIFFS.open("/cda94561be-private.pem.key", "r");
+  File file6 = SPIFFS.open("/prueba-private.pem.key", "r");//File file6 = SPIFFS.open("/49dac2-private.pem.key", "r");
   if (!file6) {
     Serial.println(F("Failed to open file for reading"));
     return;

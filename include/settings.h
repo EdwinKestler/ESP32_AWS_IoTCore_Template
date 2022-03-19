@@ -8,12 +8,12 @@ char clientId[] = "d:" ORG "TP:" DEVICE_TYPE "ID:" DEVICE_ID "FM:";             
 
 //=============================================================================================================================WIFI SETTINGS
 
-const char* ssid = "POSMOVIL1"; //Provide your SSID
-const char* password = "TEC_pos2016";          // Provide Password
+const char* ssid = "MANAGER";//"POSMOVIL1"; //Provide your SSID
+const char* password = "M!n!g3r2019";//"TEC_pos2016";          // Provide Password
 
 //=============================================================================================================================AWS MQTT IoT CORE Settings
 
-const char* mqtt_server = "a1gyzb539iq1lf-ats.iot.us-west-2.amazonaws.com";                 // Relace with your MQTT END point
+const char* mqtt_server = "achdvowacykwu-ats.iot.us-west-1.amazonaws.com"; //"a1gyzb539iq1lf-ats.iot.us-west-2.amazonaws.com";                 // Relace with your MQTT END point
 const int mqtt_port = 8883;
 
 //=============================================================================================================================Definicion de Topicos segun canal del mensaje
